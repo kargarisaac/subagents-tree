@@ -17,13 +17,13 @@ import {
   writtenFile,
 } from './format'
 
-const PANE = 'fleet'
-const TITLE = 'Fleet'
+const PANE = 'subagents-tree'
+const TITLE = 'Subagents'
 
-const agents = atom({ plugin: 'fleet', key: 'agents' } as const, {} as Record<string, Agent>)
-const main = atom({ plugin: 'fleet', key: 'main' } as const, { files: [] } as Main)
-const view = atom({ plugin: 'fleet', key: 'view' } as const, { timeline: true, hideDone: false } as View)
-const now = atom({ plugin: 'fleet', key: 'now' } as const, 0)
+const agents = atom({ plugin: 'subagents-tree', key: 'agents' } as const, {} as Record<string, Agent>)
+const main = atom({ plugin: 'subagents-tree', key: 'main' } as const, { files: [] } as Main)
+const view = atom({ plugin: 'subagents-tree', key: 'view' } as const, { timeline: true, hideDone: false } as View)
+const now = atom({ plugin: 'subagents-tree', key: 'now' } as const, 0)
 
 const statusOf = (s: AgentStatus): Status =>
   s === 'completed' || s === 'failed' || s === 'killed' ? s : 'running'
@@ -60,7 +60,7 @@ const quiet = () => undefined
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'fleet', description: 'Show every subagent of this session in a docked pane' }).catch(quiet)
+    await $.command.register({ name: 'subagents', description: 'Show every subagent of this session in a docked pane' }).catch(quiet)
 
     // Once a second while anything runs: move the clock the pane draws with and take
     // statuses and agents this mod did not see spawn from the engine's list.
@@ -96,9 +96,9 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'fleet' }, async $ => {
+  on('command.run', { command: 'subagents' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'Fleet pane opened.' }
+    return { text: 'Subagents pane opened.' }
   })
 
   on('agent.spawn', async ($, e, next) => {

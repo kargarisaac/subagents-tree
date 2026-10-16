@@ -27,7 +27,7 @@ export type View = { timeline: boolean; hideDone: boolean }
 
 declare module 'claude-code' {
   interface PluginState {
-    fleet: {
+    'subagents-tree': {
       agents: Record<string, Agent>
       main: Main
       view: View

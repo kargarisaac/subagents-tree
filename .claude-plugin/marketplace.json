@@ -1,5 +1,5 @@
 {
-  "name": "claude-fleet",
+  "name": "subagents-tree",
   "owner": { "name": "Isaac Kargar" },
-  "plugins": [{ "name": "fleet", "source": "./" }]
+  "plugins": [{ "name": "subagents-tree", "source": "./" }]
 }

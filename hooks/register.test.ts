@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
 const PANE_PROPS = {
-  title: 'Fleet',
+  title: 'Subagents',
   isFocused: false,
   bodyColumns: 70,
   placement: 'dock',
@@ -12,7 +12,7 @@ const PANE_PROPS = {
 type TestDollar = Parameters<Extract<Parameters<typeof test>[1], (...args: never[]) => unknown>>[0]
 
 const mountPane = ($: TestDollar) =>
-  $.ui.mount({ plugin: 'fleet', surface: 'terminal', component: 'Pane', requestId: 'fleet', props: PANE_PROPS } as never)
+  $.ui.mount({ plugin: 'subagents-tree', surface: 'terminal', component: 'Pane', requestId: 'subagents-tree', props: PANE_PROPS } as never)
 
 const usage = (model: string) => ({
   model,
