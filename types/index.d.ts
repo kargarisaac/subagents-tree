@@ -1,7 +1,5 @@
 export type Status = 'running' | 'completed' | 'failed' | 'killed'
 
-export type Tokens = { input: number; output: number; cacheRead: number; cacheWrite: number }
-
 export type Agent = {
   id: string
   parentId?: string
@@ -12,18 +10,11 @@ export type Agent = {
   status: Status
   startedAt: number
   endedAt?: number
-  lastStepAt?: number
-  tool?: { label: string; startedAt: number }
-  context: number
-  spent: Tokens
-  steps: number
-  tools: number
-  files: string[]
 }
 
-export type Main = { model?: string; effort?: string; files: string[] }
+export type Main = { model?: string; effort?: string }
 
-export type View = { timeline: boolean; hideDone: boolean }
+export type View = { hideDone: boolean }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -31,7 +22,6 @@ declare module 'claude-code' {
       agents: Record<string, Agent>
       main: Main
       view: View
-      now: number
     }
   }
 }

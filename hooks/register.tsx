@@ -2,28 +2,14 @@ import { atom, read, update } from 'claude-code'
 import type { AgentStatus, Register } from 'claude-code'
 
 import type { Agent, Main, Status, View } from '../types'
-import {
-  bar,
-  collisions,
-  duration,
-  effortLabel,
-  emptyTokens,
-  isStalled,
-  kilo,
-  shortModel,
-  spentOf,
-  toolLabel,
-  treeRows,
-  writtenFile,
-} from './format'
+import { effortLabel, shortModel, treeRows } from './format'
 
 const PANE = 'subagents-tree'
 const TITLE = 'Subagents'
 
 const agents = atom({ plugin: 'subagents-tree', key: 'agents' } as const, {} as Record<string, Agent>)
-const main = atom({ plugin: 'subagents-tree', key: 'main' } as const, { files: [] } as Main)
-const view = atom({ plugin: 'subagents-tree', key: 'view' } as const, { timeline: true, hideDone: false } as View)
-const now = atom({ plugin: 'subagents-tree', key: 'now' } as const, 0)
+const main = atom({ plugin: 'subagents-tree', key: 'main' } as const, {} as Main)
+const view = atom({ plugin: 'subagents-tree', key: 'view' } as const, { hideDone: false } as View)
 
 const statusOf = (s: AgentStatus): Status =>
   s === 'completed' || s === 'failed' || s === 'killed' ? s : 'running'
@@ -37,16 +23,8 @@ const fresh = (id: string, at: number, fields: Partial<Agent>): Agent => ({
   description: '',
   status: 'running',
   startedAt: at,
-  context: 0,
-  spent: emptyTokens(),
-  steps: 0,
-  tools: 0,
-  files: [],
   ...fields,
 })
-
-const addFile = (files: string[], file?: string) =>
-  file === undefined || files.includes(file) ? files : [...files, file]
 
 // Drops keys rather than storing `undefined`, which state values do not carry.
 const omit = <K extends keyof Agent>(a: Agent, ...keys: K[]): Agent => {
@@ -62,8 +40,8 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'subagents', description: 'Show every subagent of this session in a docked pane' }).catch(quiet)
 
-    // Once a second while anything runs: move the clock the pane draws with and take
-    // statuses and agents this mod did not see spawn from the engine's list.
+    // Once a second while anything runs: take statuses and agents this mod did not see
+    // spawn from the engine's list.
     $.clock.every(1000, async () => {
       const known = await read($, agents)
       const list = await $.agent.list()
@@ -90,7 +68,6 @@ export const register: Register = on => {
         }
         return merged
       })
-      await update($, now, () => at)
     })
 
     return next(e)
@@ -118,7 +95,6 @@ export const register: Register = on => {
           model: result.model,
         }),
       }))
-      await update($, now, () => at)
       if (isFirst) await $.ui.open({ id: PANE, title: TITLE, placement: 'widget' })
     }
     await track().catch(quiet)
@@ -128,8 +104,7 @@ export const register: Register = on => {
 
   on('turn.step', async function* ($, e, next) {
     const response = yield* next(e)
-    const usage = response.usage
-    const model = usage?.model ?? e.model
+    const model = response.usage?.model ?? e.model
     const effort = e.effort === undefined ? undefined : String(e.effort)
 
     if (e.agentId === undefined) {
@@ -148,46 +123,11 @@ export const register: Register = on => {
           model,
           ...(effort ?? was.effort) === undefined ? {} : { effort: effort ?? was.effort },
           status: 'running' as const,
-          lastStepAt: at,
-          steps: was.steps + 1,
-          context: usage
-            ? usage.input_tokens + usage.cache_read_input_tokens + usage.cache_creation_input_tokens
-            : was.context,
-          spent: usage
-            ? {
-                input: was.spent.input + usage.input_tokens,
-                output: was.spent.output + usage.output_tokens,
-                cacheRead: was.spent.cacheRead + usage.cache_read_input_tokens,
-                cacheWrite: was.spent.cacheWrite + usage.cache_creation_input_tokens,
-              }
-            : was.spent,
         },
       }
     })
 
     return response
-  })
-
-  on('tool.call', async ($, e, next) => {
-    const args = e as unknown as Record<string, unknown>
-    const file = writtenFile(e.tool, args)
-
-    if (e.agentId === undefined) {
-      if (file !== undefined) await update($, main, m => ({ ...m, files: addFile(m.files, file) })).catch(quiet)
-      return next(e)
-    }
-
-    const id = e.agentId
-    const begin = async () => {
-      const at = await $.clock.now()
-      await update($, agents, patch(id, a => ({ ...a, tool: { label: toolLabel(e.tool, args), startedAt: at } })))
-    }
-    await begin().catch(quiet)
-    try {
-      return await next(e)
-    } finally {
-      await update($, agents, patch(id, a => ({ ...omit(a, 'tool'), tools: a.tools + 1, files: addFile(a.files, file) }))).catch(quiet)
-    }
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -196,7 +136,7 @@ export const register: Register = on => {
     if (id !== undefined) {
       const at = await $.clock.now()
       await update($, agents, patch(id, a => ({
-        ...omit(a, 'tool'),
+        ...a,
         status: e.isAborted ? 'killed' : 'completed',
         endedAt: at,
       })))
@@ -226,40 +166,18 @@ export const register: Register = on => {
 
     const m = await read($, main)
     const v = await read($, view)
-    const clock = Math.max(await read($, now), ...Object.values(all).map(a => a.endedAt ?? a.lastStepAt ?? a.startedAt))
-    const cost = (await $.session.usage().catch(quiet))?.cost?.usd
-    const width = Math.max(20, e.props.bodyColumns)
     const inView = e.props.view.agentId
-
-    const list = Object.values(all)
-    const running = list.filter(a => a.status === 'running').length
-    const spent = list.reduce((sum, a) => sum + spentOf(a.spent), 0)
     const rows = treeRows(all, v.hideDone)
-    const clashes = collisions(all, m)
 
     const glyph = (a: Agent) =>
-      isStalled(a, clock)
-        ? { mark: '◌', color: 'warning' }
-        : a.status === 'running'
-          ? { mark: '●', color: 'claude' }
-          : a.status === 'completed'
-            ? { mark: '✓', color: 'success' }
-            : { mark: '✗', color: 'error' }
-
-    const header = [
-      `${running} running`,
-      `${list.length - running} done`,
-      `${kilo(spent)} tok`,
-      ...(cost === undefined ? [] : [`$${cost.toFixed(2)} session`]),
-    ].join(' · ')
-
-    const start = Math.min(clock, ...list.map(a => a.startedAt))
-    const label = 10
-    const lane = Math.max(4, width - label - 1)
+      a.status === 'running'
+        ? { mark: '●', color: 'claude' }
+        : a.status === 'completed'
+          ? { mark: '✓', color: 'success' }
+          : { mark: '✗', color: 'error' }
 
     return (
       <Box flexDirection="column">
-        <Text dimColor>{header}</Text>
         <Button key="main" plain onPress={() => $.ui.view({})}>
           <Text bold={inView === undefined}>{inView === undefined ? '▸ ' : '  '}main </Text>
           <Text color="claude">{shortModel(m.model)}</Text>
@@ -269,53 +187,18 @@ export const register: Register = on => {
         {rows.length === 0 && <Text dimColor>  No subagents yet.</Text>}
         {rows.map(({ agent: a, prefix }) => {
           const g = glyph(a)
-          const elapsed = duration((a.endedAt ?? clock) - a.startedAt)
-          const tokens = a.status === 'running'
-            ? `ctx ${kilo(a.context)}`
-            : `${kilo(spentOf(a.spent))} · ${a.tools} tools`
-          const toolFor = a.tool === undefined ? undefined : duration(clock - a.tool.startedAt)
           return (
-            <Box key={a.id} flexDirection="column">
-              <Button key={`row-${a.id}`} plain onPress={() => $.ui.view({ agentId: a.id })}>
-                <Text bold={inView === a.id}>{inView === a.id ? '▸' : ' '}{prefix}</Text>
-                <Text color={g.color}>{g.mark} </Text>
-                <Text color="claude">{shortModel(a.model)}</Text>
-                <Text> </Text>
-                <Text color="suggestion">{effortLabel(a.effort)}</Text>
-                <Text dimColor> {elapsed} {tokens} </Text>
-                <Text wrap="truncate-end">{a.type}: {a.description}</Text>
-              </Button>
-              {a.tool !== undefined && (
-                <Text dimColor wrap="truncate-end">
-                  {' '}{prefix.replace(/[├└]─$/, prefix.endsWith('└─') ? '  ' : '│ ')}  ⎿ {a.tool.label} {toolFor}
-                </Text>
-              )}
-              {isStalled(a, clock) && (
-                <Text color="warning">{'   '}no step for {duration(clock - (a.lastStepAt ?? a.startedAt))}</Text>
-              )}
-            </Box>
+            <Button key={`row-${a.id}`} plain onPress={() => $.ui.view({ agentId: a.id })}>
+              <Text bold={inView === a.id}>{inView === a.id ? '▸' : ' '}{prefix}</Text>
+              <Text color={g.color}>{g.mark} </Text>
+              <Text color="claude">{shortModel(a.model)}</Text>
+              <Text> </Text>
+              <Text color="suggestion">{effortLabel(a.effort)}</Text>
+              <Text dimColor wrap="truncate-end"> {a.type}</Text>
+            </Button>
           )
         })}
-        {v.timeline && rows.length > 0 && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text dimColor>timeline {'─'.repeat(Math.max(0, width - 13))} now</Text>
-            {rows.map(({ agent: a, depth }) => (
-              <Box key={`lane-${a.id}`}>
-                <Text dimColor>{`${' '.repeat(depth)}${a.type}`.slice(0, label).padEnd(label)} </Text>
-                <Text color={a.status === 'running' ? 'claude' : 'inactive'}>{bar(a, start, clock, lane)}</Text>
-              </Box>
-            ))}
-          </Box>
-        )}
-        {clashes.map(c => (
-          <Text key={`clash-${c.file}`} color="warning" wrap="truncate-end">
-            ⚠ {c.count} loops wrote {c.file.split('/').slice(-3).join('/')}
-          </Text>
-        ))}
-        <Box marginTop={1} gap={2}>
-          <Button key="toggle-timeline" plain hotkey="t" onPress={() => update($, view, x => ({ ...x, timeline: !x.timeline }))}>
-            timeline
-          </Button>
+        <Box marginTop={1}>
           <Button key="toggle-done" plain hotkey="h" onPress={() => update($, view, x => ({ ...x, hideDone: !x.hideDone }))}>
             {v.hideDone ? 'show done' : 'hide done'}
           </Button>

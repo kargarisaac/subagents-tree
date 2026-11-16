@@ -64,10 +64,13 @@ test('main and each subagent row show their model and effort', async ($, on) => 
   const text = await textOf(ui)
 
   expect(text).toContain('main opus-5-5 xhigh')
-  expect(text).toContain('haiku-5-5 max')
-  expect(text).toContain('Explore: find mods')
-  expect(text).toContain('opus-5-5 high')
-  expect(text).toContain('general-purpose: deep research')
+  expect(text).toContain('haiku-5-5 max Explore')
+  expect(text).toContain('opus-5-5 high general-purpose')
+  expect(text).not.toContain('find mods')
+  expect(text).not.toContain('tok')
+
+  const all = (await ui.findAll({ type: 'Text' })).map(t => t.text ?? '').join('\n')
+  expect(all).not.toContain('timeline')
 })
 
 test('a spawned agent shows its resolved model before its first step', async ($, on) => {
@@ -83,37 +86,23 @@ test('a spawned agent shows its resolved model before its first step', async ($,
   expect(text).toContain('sonnet-5-5 …')
 })
 
-test('a running tool shows under its agent and a finished agent keeps its row', async ($, on) => {
-  const clock = mock.clock(on, { now: 5000 })
+test('a finished agent keeps its row with no tool details', async ($, on) => {
+  mock.clock(on, { now: 5000 })
   on('agent.list', () => ({ value: [] }))
   on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as never)
   on('ui.open', () => ({ value: { isPlaced: true } }) as never)
   on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'a1' }) as never)
-  let release = () => {}
-  const held = new Promise<void>(resolve => { release = resolve })
-  on('tool.call', async () => {
-    await held
-    return { result: 'ok' } as never
-  })
+  on('tool.call', () => ({ result: 'ok' }) as never)
   on('turn.complete', () => ({ text: '' }) as never)
 
   await $.agent.spawn({ prompt: 'p', description: 'grep things', subagentType: 'Explore' } as never)
-  const call = $.tool.call({ tool: 'Grep', pattern: 'live pane', tool_use_id: 'tu1', agentId: 'a1' } as never)
-  await clock.advance(0)
+  await $.tool.call({ tool: 'Grep', pattern: 'live pane', tool_use_id: 'tu1', agentId: 'a1' } as never)
+  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 10, isAborted: false, agentId: 'a1' } as never)
 
   const ui = await mountPane($)
-  const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text ?? '')
-  expect(texts.join(' | ')).toContain('⎿ Grep /live pane/')
-
-  release()
-  await call
-  await $.turn.complete({ turnId: 't1', answer: '', durationMs: 10, isAborted: false, agentId: 'a1' } as never)
-  await ui.redraw()
-
-  const text = await textOf(ui)
-  expect(text).toContain('✓')
-  expect(text).toContain('1 tools')
-  expect(text).toContain('haiku-5-5')
+  const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text ?? '').join(' | ')
+  expect(texts).not.toContain('⎿')
+  expect(await textOf(ui)).toContain('✓ haiku-5-5 … Explore')
 })
 
 test('an agent spawned by a subagent is drawn nested under it', async ($, on) => {
@@ -133,9 +122,9 @@ test('an agent spawned by a subagent is drawn nested under it', async ($, on) =>
   await clock.advance(1000)
 
   const text = await textOf(await mountPane($))
-  expect(text).toMatch(/^ └─● .*general-purpose: lead$/m)
-  expect(text).toMatch(/^   ├─● .*worker: fetch docs$/m)
-  expect(text).toMatch(/^   └─✓ .*worker: fetch readme$/m)
+  expect(text).toMatch(/^ └─● .*general-purpose$/m)
+  expect(text).toMatch(/^   ├─● .*worker$/m)
+  expect(text).toMatch(/^   └─✓ .*worker$/m)
 })
 
 test('as a widget it shows only each subagent with its model and effort', async ($, on) => {
