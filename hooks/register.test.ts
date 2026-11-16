@@ -73,6 +73,28 @@ test('main and each subagent row show their model and effort', async ($, on) => 
   expect(all).not.toContain('timeline')
 })
 
+test('a spawned agent shows its effort before its first step ends', async ($, on) => {
+  const clock = mock.clock(on, { now: 5000 })
+  on('agent.list', () => ({ value: [] }))
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('agent.spawn', () => ({ model: 'claude-haiku-5-5', agentId: 'a1' }) as never)
+  let release = () => {}
+  const held = new Promise<void>(resolve => { release = resolve })
+  on('turn.step', async function* () {
+    await held
+    return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: usage('claude-haiku-5-5') }
+  })
+
+  await $.agent.spawn({ prompt: 'p', description: 'y', subagentType: 'Plan' } as never)
+  const running = runStep($, step('a1', 'max', 'claude-haiku-5-5'))
+  await clock.advance(0)
+
+  expect(await textOf(await mountPane($))).toContain('haiku-5-5 max Plan')
+  release()
+  await running
+})
+
 test('a spawned agent shows its resolved model before its first step', async ($, on) => {
   mock.clock(on, { now: 5000 })
   on('agent.list', () => ({ value: [] }))

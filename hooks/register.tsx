@@ -103,9 +103,15 @@ export const register: Register = on => {
   })
 
   on('turn.step', async function* ($, e, next) {
+    const effort = e.effort === undefined ? undefined : String(e.effort)
+    // Show the effort while the step runs, not only once it ends: a first step can take minutes.
+    const stepId = e.agentId
+    if (stepId !== undefined && effort !== undefined) {
+      await update($, agents, patch(stepId, a => ({ ...a, effort }))).catch(quiet)
+    }
+
     const response = yield* next(e)
     const model = response.usage?.model ?? e.model
-    const effort = e.effort === undefined ? undefined : String(e.effort)
 
     if (e.agentId === undefined) {
       await update($, main, m => ({ ...m, model, effort: effort ?? m.effort }))
