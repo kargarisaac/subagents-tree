@@ -137,3 +137,27 @@ test('an agent spawned by a subagent is drawn nested under it', async ($, on) =>
   expect(text).toMatch(/^   ├─● .*worker: fetch docs$/m)
   expect(text).toMatch(/^   └─✓ .*worker: fetch readme$/m)
 })
+
+test('as a widget it shows only each subagent with its model and effort', async ($, on) => {
+  mock.clock(on, { now: 1_000_000 })
+  on('agent.list', () => ({ value: [] }))
+  on('ui.render', () => ({ type: 'Box', props: {}, children: [] }) as never)
+  on('ui.open', () => ({ value: { isPlaced: true } }) as never)
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'a1' }) as never)
+  on('turn.step', async function* () {
+    return { turnId: 't1', index: 0, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: usage('claude-haiku-5-5') }
+  })
+
+  await $.agent.spawn({ prompt: 'p', description: 'find mods', subagentType: 'Explore' } as never)
+  await runStep($, step('a1', 'low', 'claude-haiku-5-5'))
+
+  const ui = await $.ui.mount({
+    plugin: 'subagents-tree', surface: 'desktop', component: 'Pane', requestId: 'subagents-tree',
+    props: { ...(PANE_PROPS as object), placement: 'widget', anchoredEdges: [] },
+  } as never)
+  const text = (await ui.findAll({ type: 'Text' })).map(t => t.text ?? '').join('\n')
+
+  expect(text).toContain('Explore: find mods haiku-5-5 low')
+  expect(text).not.toContain('tok')
+  expect(text).not.toContain('timeline')
+})

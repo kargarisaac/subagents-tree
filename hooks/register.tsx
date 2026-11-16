@@ -97,7 +97,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'subagents' }, async $ => {
-    await $.ui.open({ id: PANE, title: TITLE })
+    await $.ui.open({ id: PANE, title: TITLE, placement: 'widget' })
     return { text: 'Subagents pane opened.' }
   })
 
@@ -119,7 +119,7 @@ export const register: Register = on => {
         }),
       }))
       await update($, now, () => at)
-      if (isFirst) await $.ui.open({ id: PANE, title: TITLE })
+      if (isFirst) await $.ui.open({ id: PANE, title: TITLE, placement: 'widget' })
     }
     await track().catch(quiet)
 
@@ -207,6 +207,23 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const all = await read($, agents)
+
+    // Widget (minimized pane, e.g. in the desktop session rail): only name, model and effort.
+    if (e.props.placement === 'widget') {
+      const list = Object.values(all)
+      return (
+        <Box flexDirection="column">
+          {list.length === 0 && <Text dimColor>No subagents yet.</Text>}
+          {list.map(a => (
+            <Text key={a.id} wrap="truncate-end" dimColor={a.status !== 'running'}>
+              {a.type}: {a.description} <Text color="claude">{shortModel(a.model)}</Text>{' '}
+              <Text color="suggestion">{effortLabel(a.effort)}</Text>
+            </Text>
+          ))}
+        </Box>
+      )
+    }
+
     const m = await read($, main)
     const v = await read($, view)
     const clock = Math.max(await read($, now), ...Object.values(all).map(a => a.endedAt ?? a.lastStepAt ?? a.startedAt))

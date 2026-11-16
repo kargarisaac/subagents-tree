@@ -1,6 +1,6 @@
 {
   "name": "subagents-tree",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A docked pane with every subagent of the session as a tree: model, effort, live tool, elapsed time, tokens and a timeline.",
   "types": "./types/index.d.ts"
 }
